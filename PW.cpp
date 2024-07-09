@@ -276,5 +276,7 @@ int main()
         << float(chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()) / 1000 << " s\a"
         << endl;
 
+    system("pause");
+
     return 0;
 }
