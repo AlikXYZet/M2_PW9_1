@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <vector>
+#include <algorithm>
 
 #include <chrono>   // Задержка времени
 
@@ -18,9 +19,6 @@ using namespace std;
 /*Блокираторы для соблюдения очереди:*/
 // Для сохранения в базу данных
 mutex mtx_database;
-
-// 
-mutex mtx_test;
 //---------------------------------------------------------------------
 
 
@@ -60,38 +58,55 @@ string rand_Nickname()
 }
 
 // Функция вывода данных
-void DataPrint(vector<Data>& in_database, bool& bFlag, const function<const bool(Data&, Data&)>& b_redicate)
+void DataPrint(vector<Data>& in_database, bool& bFlag, const function<const bool(Data&, Data&)>& b_predicate)
 {
     // Вывод "шапки" в консоль
-    cout.width(12);
-    cout << "Nickname"
-        << "Age\t"
-        << "Rating\t"
-        << "ID"
-        << endl;
+    cout.width(4);
+    cout << "#";
 
-    unsigned int num_line = 1;
-    Data curr_data;
+    cout.width(12);
+    cout << "Nickname";
+
+    cout.width(4);
+    cout << "Age";
+
+    cout.width(7);
+    cout << "Rating";
+
+    cout.width(20);
+    cout << "ID" << endl;
 
     while (true)
     {
         if (bFlag)
         {
+            printf("\x1B[%d;%df", 7, 0);
 
+            int i = 0;
 
             mtx_database.lock();
-            curr_data = in_database.back();
+
+            sort(in_database.begin(), in_database.end(), b_predicate);
+
+            for (const Data& data : in_database)
+            {
+                cout.width(4);
+                cout << ++i;
+
+                cout.width(12);
+                cout << data.Nickname;
+
+                cout.width(4);
+                cout << to_string(data.Age);
+
+                cout.width(7);
+                cout << to_string(data.Rating);
+
+                cout.width(20);
+                cout << to_string(data.ID) << endl;
+            }
+
             mtx_database.unlock();
-
-            cout.width(12);
-
-            cout
-                << curr_data.Nickname
-                << to_string(curr_data.Age) << '\t'
-                << to_string(curr_data.Rating) << '\t'
-                << to_string(curr_data.ID) << "\t\t"
-                << " "
-                << endl;
 
             bFlag = false;
         }
@@ -150,22 +165,75 @@ int main()
     // Флаг вывода обновлённых данных
     bool bGoPrint = false;
 
-    // Критерий сортировки
-    auto lambda = [](Data& first, Data& second) -> bool
+    // Критерий сортировки с вариантом по умолчанию
+    function<const bool(Data&, Data&)> l_sort = [](Data& first, Data& second)
         {
             return first.Nickname < second.Nickname;
         };
 
     // Поток вывода данных
-    thread printThread(DataPrint, ref(database), ref(bGoPrint), ref(lambda));
+    thread printThread;
 
     // Переменная начала отсчёта времени
-    chrono::steady_clock::time_point start = chrono::steady_clock::now();
+    chrono::steady_clock::time_point start;
     //----------------------------------------
 
 
 
-    // Запуск каждого потока
+    /* ---   Выбор сортировки   --- */
+
+    // Переменная выбора
+    int switch_on = 0;
+
+    cout
+        << 1 << " - Nickname\n"
+        << 2 << " - Age\n"
+        << 3 << " - Rating\n"
+        << 4 << " - ID\n"
+        << "Выбирите столбец для сортировки (1 - по умолчанию): ";
+    cin >> switch_on;
+
+    // Запуск потока "Потребителя"
+    printThread = thread(DataPrint, ref(database), ref(bGoPrint), ref(l_sort));
+
+    // Начало отсчёта времени
+    start = start = chrono::steady_clock::now();
+
+
+    switch (switch_on)
+    {
+    case 1:
+        l_sort = [](Data& first, Data& second)
+            {
+                return first.Nickname < second.Nickname;
+            };
+        break;
+    case 2:
+        l_sort = [](Data& first, Data& second)
+            {
+                return first.Age < second.Age;
+            };
+        break;
+    case 3:
+        l_sort = [](Data& first, Data& second)
+            {
+                return first.Rating < second.Rating;
+            };
+        break;
+    case 4:
+        l_sort = [](Data& first, Data& second)
+            {
+                return first.ID < second.ID;
+            };
+        break;
+    default:
+        break;
+    }
+    //----------------------------------------
+
+
+
+    // Запуск каждого потока "Продюсера"
     for (size_t i = 0; i < numberThreads; ++i)
     {
         // Вариант с временем в диапазоне [0, 10000) мс
@@ -196,16 +264,17 @@ int main()
         Threads[i].join();
     }
 
-    // 
-    this_thread::sleep_for(chrono::milliseconds(100));
+    // Ожидание завершения вывода
+    while (bGoPrint) {}
+
+    // Принудительное завершение потока
+    printThread.detach();
 
     cout
         << "===============================================\n"
         << "Затраченное время: "
         << float(chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()) / 1000 << " s\a"
         << endl;
-
-    printThread.detach();
 
     return 0;
 }
